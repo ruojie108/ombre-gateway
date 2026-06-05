@@ -1,0 +1,56 @@
+services:
+  ombre-memory-gateway:
+    build: .
+    container_name: ombre-memory-gateway
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      # VPS 上旧版 Ombre-Brain 可能占用 8000/18001，所以新网关默认映射到 18002
+      - "${OMBRE_HOST_PORT:-18002}:8000"
+    environment:
+      - OMBRE_TRANSPORT=${OMBRE_TRANSPORT:-streamable-http}
+      - OMBRE_PORT=8000
+      - OMBRE_BUCKETS_DIR=/data
+      - OMBRE_API_KEY=${OMBRE_API_KEY:-}
+      - OMBRE_BASE_URL=${OMBRE_BASE_URL:-}
+      - OMBRE_GATEWAY_ENABLED=${OMBRE_GATEWAY_ENABLED:-true}
+      - OMBRE_GATEWAY_MOCK_LLM=${OMBRE_GATEWAY_MOCK_LLM:-true}
+      - OMBRE_GATEWAY_AUTH_TOKEN=${OMBRE_GATEWAY_AUTH_TOKEN:-}
+      - OMBRE_MAIN_MODEL_PROVIDER=${OMBRE_MAIN_MODEL_PROVIDER:-anthropic}
+      - OMBRE_MAIN_MODEL_BASE_URL=${OMBRE_MAIN_MODEL_BASE_URL:-https://api.anthropic.com}
+      - OMBRE_MAIN_MODEL_API_KEY=${OMBRE_MAIN_MODEL_API_KEY:-}
+      - OMBRE_MAIN_MODEL_NAME=${OMBRE_MAIN_MODEL_NAME:-claude-3-5-sonnet-latest}
+      - OMBRE_MAIN_MODEL_VERSION=${OMBRE_MAIN_MODEL_VERSION:-2023-06-01}
+      - OMBRE_AUTO_RECALL_ENABLED=${OMBRE_AUTO_RECALL_ENABLED:-true}
+      - OMBRE_AUTO_RECALL_RECENT_TURNS=${OMBRE_AUTO_RECALL_RECENT_TURNS:-6}
+      - OMBRE_AUTO_RECALL_MAX_MEMORIES=${OMBRE_AUTO_RECALL_MAX_MEMORIES:-8}
+      - OMBRE_AUTO_RECALL_MAX_TOKENS=${OMBRE_AUTO_RECALL_MAX_TOKENS:-3000}
+      - OMBRE_AUTO_RECALL_INCLUDE_RELATED=${OMBRE_AUTO_RECALL_INCLUDE_RELATED:-true}
+      - OMBRE_AUTO_RECALL_INCLUDE_FLOATING=${OMBRE_AUTO_RECALL_INCLUDE_FLOATING:-false}
+    volumes:
+      - ${OMBRE_HOST_VAULT_DIR:-./buckets}:/data
+      - ./config.yaml:/app/config.yaml
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Optional Cloudflare Tunnel. If you already manage cloudflared elsewhere, you can ignore this service.
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: ombre-memory-gateway-tunnel
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    command: >
+      tunnel --no-autoupdate --protocol http2
+      --config /etc/cloudflared/config.yml
+      --proxy-keepalive-timeout 300s
+      --proxy-connection-timeout 300s
+      run
+    volumes:
+      - ~/.cloudflared:/etc/cloudflared
+    depends_on:
+      - ombre-memory-gateway
